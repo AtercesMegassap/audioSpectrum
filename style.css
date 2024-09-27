@@ -1,0 +1,23 @@
+body {
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100dvh;
+    background-color: #1e1e1e;
+}
+
+.container {
+    text-align: center;
+    color: #fff;
+}
+
+canvas {
+    border: 1px solid #fff;
+    background-color: #000;
+    display: block;
+}
+
+input[type="file"] {
+    margin-top: 20px;
+}
