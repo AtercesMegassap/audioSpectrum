@@ -2,16 +2,18 @@ const canvas = document.getElementById('audioCanvas');
 const ctx = canvas.getContext('2d');
 const audioFileInput = document.getElementById('audioFile');
 const imageFileInput = document.getElementById('imageFile');
+const downloadVideoBtn = document.getElementById('downloadVideo');
+const videoPreview = document.getElementById('videoPreview');
 
 canvas.width = 400;
 canvas.height = 400;
 
 let img = null;
-
-function escolhaAleatoria(arr) {
-    const indiceAleatorio = Math.floor(Math.random() * arr.length);
-    return arr[indiceAleatorio];
-}
+let mediaRecorder;
+let recordedChunks = [];
+let audioStream;
+let audioContext;
+let audioSource;
 
 imageFileInput.addEventListener('change', function() {
     const file = this.files[0];
@@ -34,7 +36,7 @@ audioFileInput.addEventListener('change',function () {
     const file = this.files[0];
     if(!file) return;
 
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const reader = new FileReader();
 
     reader.onload = function (event) {
@@ -46,24 +48,21 @@ audioFileInput.addEventListener('change',function () {
     reader.readAsArrayBuffer(file);
 });
 
-// Lista de ângulos para formar uma cruz (em radianos)
-const crossAngles = [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2]; // 0°, 90°, 180°, 270°
-
-// Lista de ângulos para diagonais (em radianos)
-const diagonalAngles = [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4]; // 45°, 135°, 225°, 315°
-
 function playAudio(buffer, audioContext) {
-    const audioSource = audioContext.createBufferSource();
+    audioSource = audioContext.createBufferSource();
     const analyser = audioContext.createAnalyser();
 
     audioSource.buffer = buffer;
     audioSource.connect(analyser);
     analyser.connect(audioContext.destination);
-    audioSource.start();
 
     analyser.fftSize = 256;
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
+
+    // Captura o áudio para o vídeo
+    audioStream = audioContext.createMediaStreamDestination();
+    audioSource.connect(audioStream);
 
     function draw(angleOffset) {
         requestAnimationFrame(draw);
@@ -113,6 +112,16 @@ function playAudio(buffer, audioContext) {
 
     const angleOffset = Math.PI / 2; // Começar na parte superior do círculo
 
+    // Começa a gravar quando o áudio começa a tocar
+    audioSource.start();
+    // Para de gravar ao fim do áudio
+    audioSource.onended = () => {
+        setTimeout(() => {
+            mediaRecorder.stop();
+        }, 1000);  // Adiciona uma pausa de 1000ms
+    };
+    startRecording(); // Inicia a gravação junto com o áudio
+
     draw(-angleOffset);
 }
 
@@ -124,3 +133,45 @@ function drawImageAndSpectrum() {
         ctx.drawImage(img, centerX, centerY, imgSize, imgSize);
     }
 }
+
+// Iniciar gravação
+function startRecording() {
+    const canvasStream = canvas.captureStream(60); // Capture video at 120 FPS
+    const combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioStream.stream.getAudioTracks()]);
+
+    mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+    recordedChunks = [];
+
+    mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+            recordedChunks.push(event.data);
+        }
+    };
+
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        videoPreview.src = url;
+        downloadVideoBtn.disabled = false; // Habilitar o botão de download
+    };
+
+    mediaRecorder.start();
+}
+
+// Parar gravação
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop(); // Para a gravação quando o áudio acabar
+    }
+}
+
+// Download the recorded video
+downloadVideoBtn.addEventListener('click', () => {
+    const url = videoPreview.src;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'output_with_audio.webm';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+});
